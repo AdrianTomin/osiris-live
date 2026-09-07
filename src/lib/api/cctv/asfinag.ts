@@ -1,4 +1,4 @@
-import { CctvCamera } from './types';
+import { fetch } from '@/lib/api/http';
 
 const ASFINAG_WEBCAMS_URL = 'https://odo.asfinag.at/odo/rest/sec/resource/001/json/webcams?language=atDE';
 const ASFINAG_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -22,6 +22,17 @@ interface AsfinagWebcam {
   url_campic?: string;
 }
 
+export interface CctvCamera {
+  id: string;
+  lat: number;
+  lng: number;
+  name: string;
+  city: string;
+  country: string;
+  feed_url: string;
+  source: string;
+}
+
 let cachedCameras: CctvCamera[] | null = null;
 let cacheExpiresAt = 0;
 let pendingFetch: Promise<CctvCamera[]> | null = null;
@@ -31,6 +42,7 @@ function toAsfinagCamera(cam: AsfinagWebcam): CctvCamera | null {
     return null;
   }
 
+  // Skip Hungarian road authority (Utinform) cameras — feeds are unavailable
   if (cam.wcs_id.startsWith('Utinform')) {
     return null;
   }
@@ -60,8 +72,8 @@ async function fetchFreshAsfinagCameras(): Promise<CctvCamera[]> {
     if (!Array.isArray(data)) return [];
 
     return data
-        .map(toAsfinagCamera)
-        .filter((cam): cam is CctvCamera => cam !== null);
+      .map(toAsfinagCamera)
+      .filter((cam): cam is CctvCamera => cam !== null);
   } catch {
     return [];
   }
@@ -75,17 +87,17 @@ export async function fetchAsfinagCameras(): Promise<CctvCamera[]> {
 
   if (!pendingFetch) {
     pendingFetch = fetchFreshAsfinagCameras()
-        .then((cameras) => {
-          if (cameras.length > 0) {
-            cachedCameras = cameras;
-            cacheExpiresAt = Date.now() + ASFINAG_CACHE_TTL_MS;
-          }
+      .then((cameras) => {
+        if (cameras.length > 0) {
+          cachedCameras = cameras;
+          cacheExpiresAt = Date.now() + ASFINAG_CACHE_TTL_MS;
+        }
 
-          return cachedCameras ?? cameras;
-        })
-        .finally(() => {
-          pendingFetch = null;
-        });
+        return cachedCameras ?? cameras;
+      })
+      .finally(() => {
+        pendingFetch = null;
+      });
   }
 
   return pendingFetch;

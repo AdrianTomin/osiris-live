@@ -3,8 +3,11 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
+import { fetchCountryRisk } from '@/lib/api/country-risk';
+import { fetchCyberThreats } from '@/lib/api/cyber-threats';
+import { CountryRisk } from "@/lib/api/country-risk";
+
 interface Exchange { name: string; country: string; open: boolean; }
-interface CountryRisk { code: string; risk_score: number; risk_level: string; tags: string[]; }
 
 const RISK_TOOLTIPS: Record<string, string> = {
   CRITICAL: 'Active conflict, sanctions, or major instability detected',
@@ -24,22 +27,22 @@ export default function GlobalStatusBar() {
     const fetchData = async () => {
       try {
         const [riskRes, cyberRes] = await Promise.allSettled([
-          fetch('/api/country-risk'),
-          fetch('/api/cyber-threats'),
+          fetchCountryRisk(),
+          fetchCyberThreats(),
         ]);
-        if (riskRes.status === 'fulfilled' && riskRes.value.ok) {
-          const d = await riskRes.value.json();
+        if (riskRes.status === 'fulfilled') {
+          const d = riskRes.value;
           setExchanges(d.exchanges || []);
           setRisks(d.countries || []);
           setOpenCount(d.open_exchanges || 0);
         }
-        if (cyberRes.status === 'fulfilled' && cyberRes.value.ok) {
-          setCyber(await cyberRes.value.json());
+        if (cyberRes.status === 'fulfilled') {
+          setCyber(cyberRes.value);
         }
       } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
     };
     fetchData();
-    const iv = setInterval(fetchData, 1800000); // 30 min (was 5 min)
+    const iv = setInterval(fetchData, 1800000);
     return () => clearInterval(iv);
   }, []);
 

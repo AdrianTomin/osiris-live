@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { fetch } from '@/lib/api/http';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Layers, BarChart3, Newspaper, Search, Share2, Map as MapIcon, X, Globe, MapPinned, Radar, Satellite, Moon, ExternalLink, AlertTriangle, Building2, RadioTower, Activity, Shield, Database, Wifi } from 'lucide-react';
@@ -14,6 +15,21 @@ import ViewPresets from '@/components/ViewPresets';
 import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import GlobalStatusBar from '@/components/GlobalStatusBar';
 import LiveAlerts from '@/components/LiveAlerts';
+
+import { fetchEarthquakes } from '@/lib/api/earthquakes';
+import { fetchNews } from '@/lib/api/news';
+import { fetchMarkets } from '@/lib/api/markets';
+import { fetchSpaceWeather } from '@/lib/api/space-weather';
+import { fetchFlights } from '@/lib/api/flights';
+import { fetchSatellites } from '@/lib/api/satellites';
+import { fetchFires } from '@/lib/api/fires';
+import { fetchCctvCameras } from '@/lib/api/cctv/cctv';
+import { fetchMaritime } from '@/lib/api/maritime';
+import { fetchLiveNews } from '@/lib/api/live-news';
+import { fetchWeatherEvents } from '@/lib/api/weather';
+import { fetchInfrastructure } from '@/lib/api/infrastructure';
+import { fetchGdelt } from '@/lib/api/gdelt';
+import { fetchRegionDossier } from '@/lib/api/region-dossier';
 
 const OsirisMap = dynamic(() => import('@/components/OsirisMap'), { ssr: false });
 const LayerPanel = dynamic(() => import('@/components/LayerPanel'));
@@ -49,7 +65,7 @@ const UptimeClock = () => {
     }, 1000);
     return () => clearInterval(iv);
   }, []);
-  return <span className="hidden lg:inline">UPTIME: <span className="text-[var(--gold-primary)]">{uptime}</span></span>;
+  return <span className="hidden lg:inline">UPTIME: <span className="text-(--gold-primary)">{uptime}</span></span>;
 };
 
 const ZuluClock = () => {
@@ -61,7 +77,7 @@ const ZuluClock = () => {
     }, 1000);
     return () => clearInterval(iv);
   }, []);
-  return <span className="text-[var(--cyan-primary)] font-bold tabular-nums">{time || 'ZULU --:--:--Z'}</span>;
+  return <span className="text-(--cyan-primary) font-bold tabular-nums">{time || 'ZULU --:--:--Z'}</span>;
 };
 
 const DataThroughput = () => {
@@ -226,8 +242,7 @@ export default function Dashboard() {
   const handleRightClick = useCallback(async (coords: { lat: number; lng: number }) => {
     setDossierLoading(true); setRegionDossier(null);
     try {
-      const res = await fetch(`/api/region-dossier?lat=${coords.lat}&lng=${coords.lng}`);
-      if (res.ok) setRegionDossier(await res.json());
+      setRegionDossier(await fetchRegionDossier(coords.lat, coords.lng));
     } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); } finally { setDossierLoading(false); }
   }, []);
 
@@ -242,42 +257,47 @@ export default function Dashboard() {
   }, []);
 
   // ── SHARED FETCH UTILITY (Fixes #107 — single definition, not 3 copies) ──
-  const fetchEndpoint = useCallback(async (url: string, transform?: (d: any) => any, options?: RequestInit) => {
+  const versionBumpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchEndpoint = useCallback(async (fetcher: () => any | Promise<any>, transform?: (d: any) => any) => {
     try {
-      const res = await fetch(url, options);
-      if (res.ok) {
-        const json = await res.json();
-        const d = transform ? transform(json) : json;
-        dataRef.current = { ...dataRef.current, ...d };
+      const json = await fetcher();
+      const d = transform ? transform(json) : json;
+      dataRef.current = { ...dataRef.current, ...d };
+
+      // Batch rapid successive fetch completions into a single re-render,
+      // instead of re-rendering OsirisMap once per fetch (which was
+      // colliding with MapLibre's globe projection error-measurement readback).
+      if (versionBumpTimer.current) clearTimeout(versionBumpTimer.current);
+      versionBumpTimer.current = setTimeout(() => {
         setDataVersion(v => v + 1);
-        setBackendStatus('connected');
-      }
+      }, 100);
+
+      setBackendStatus('connected');
     } catch (e) {
       console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e);
       setBackendStatus('error');
     }
   }, []);
-
   // ── PROGRESSIVE DATA LOADING (request-optimized) ──
   useEffect(() => {
     // Priority 1: Core feeds (always needed for panels)
-    fetchEndpoint('/api/earthquakes');
-    fetchEndpoint('/api/news');
-    const marketTimer = setTimeout(() => fetchEndpoint('/api/markets', d => ({ markets: d })), 800);
+    fetchEndpoint(fetchEarthquakes);
+    fetchEndpoint(fetchNews);
+    const marketTimer = setTimeout(() => fetchEndpoint(fetchMarkets, d => ({ markets: d })), 800);
 
     // Priority 2: Space Weather (needed for MarketsPanel)
     const spaceTimer = setTimeout(async () => {
       try {
-        const r = await fetch('/api/space-weather');
-        if (r.ok) setSpaceWeather(await r.json());
+        setSpaceWeather(await fetchSpaceWeather());
       } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
     }, 5000);
 
     // Polling — OPTIMIZED intervals to minimize edge requests
     const intervals = [
-      setInterval(() => fetchEndpoint('/api/earthquakes'), 900000),  // 15 min (was 5)
-      setInterval(() => fetchEndpoint('/api/news'), 1800000),        // 30 min (was 10)
-      setInterval(() => fetchEndpoint('/api/markets', d => ({ markets: d })), 900000), // 15 min (was 5)
+      setInterval(() => fetchEndpoint(fetchEarthquakes), 900000),
+      setInterval(() => fetchEndpoint(fetchNews), 1800000),
+      setInterval(() => fetchEndpoint(fetchMarkets, d => ({ markets: d })), 900000),
     ];
     return () => {
       clearTimeout(marketTimer);
@@ -293,58 +313,58 @@ export default function Dashboard() {
     // Flights
     if (activeLayers.flights || activeLayers.military || activeLayers.jets || activeLayers.private) {
       if (!layerFetchedRef.current.has('flights')) {
-        fetchEndpoint('/api/flights');
+        fetchEndpoint(fetchFlights);
         layerFetchedRef.current.add('flights');
       }
     }
     // Satellites
     if (activeLayers.satellites && !layerFetchedRef.current.has('satellites')) {
-      fetchEndpoint('/api/satellites');
+      fetchEndpoint(fetchSatellites);
       layerFetchedRef.current.add('satellites');
     }
     // Fires
     if (activeLayers.fires && !layerFetchedRef.current.has('fires')) {
-      fetchEndpoint('/api/fires');
+      fetchEndpoint(fetchFires);
       layerFetchedRef.current.add('fires');
     }
     // CCTV
     if (activeLayers.cctv && !layerFetchedRef.current.has('cctv')) {
-      fetchEndpoint('/api/cctv?region=all');
+      fetchEndpoint(() => fetchCctvCameras('all'));
       layerFetchedRef.current.add('cctv');
     }
     // Maritime
     if (activeLayers.maritime && !layerFetchedRef.current.has('maritime')) {
-      fetchEndpoint('/api/maritime', d => ({ maritime_ports: d.ports, maritime_chokepoints: d.chokepoints, maritime_ships: d.ships }));
+      fetchEndpoint(fetchMaritime, d => ({ maritime_ports: d.ports, maritime_chokepoints: d.chokepoints, maritime_ships: d.ships }));
       layerFetchedRef.current.add('maritime');
     }
     // Balloons
-    if (activeLayers.balloons && !layerFetchedRef.current.has('balloons')) {
-      fetchEndpoint('/api/balloons', d => ({ balloons: d.balloons }));
-      layerFetchedRef.current.add('balloons');
-    }
-    // Radiation
-    if (activeLayers.radiation && !layerFetchedRef.current.has('radiation')) {
-      fetchEndpoint('/api/radiation', d => ({ radiation: d.stations }));
-      layerFetchedRef.current.add('radiation');
-    }
+    // if (activeLayers.balloons && !layerFetchedRef.current.has('balloons')) {
+    //   fetchEndpoint('/api/balloons', d => ({ balloons: d.balloons }));
+    //   layerFetchedRef.current.add('balloons');
+    // }
+    // // Radiation
+    // if (activeLayers.radiation && !layerFetchedRef.current.has('radiation')) {
+    //   fetchEndpoint('/api/radiation', d => ({ radiation: d.stations }));
+    //   layerFetchedRef.current.add('radiation');
+    // }
     // Live News
     if (activeLayers.live_news && !layerFetchedRef.current.has('live_news')) {
-      fetchEndpoint('/api/live-news', d => ({ live_feeds: d.feeds }));
+      fetchEndpoint(fetchLiveNews, d => ({ live_feeds: d.feeds }));
       layerFetchedRef.current.add('live_news');
     }
     // Weather
     if (activeLayers.weather && !layerFetchedRef.current.has('weather')) {
-      fetchEndpoint('/api/weather', d => ({ weather_events: d.events }));
+      fetchEndpoint(fetchWeatherEvents, d => ({ weather_events: d.events }));
       layerFetchedRef.current.add('weather');
     }
     // Infrastructure
     if (activeLayers.infrastructure && !layerFetchedRef.current.has('infrastructure')) {
-      fetchEndpoint('/api/infrastructure', d => ({ infrastructure: d.infrastructure }));
+      fetchEndpoint(fetchInfrastructure, d => ({ infrastructure: d.infrastructure }));
       layerFetchedRef.current.add('infrastructure');
     }
     // Global Incidents (GDELT)
     if (activeLayers.global_incidents && !layerFetchedRef.current.has('gdelt')) {
-      fetchEndpoint('/api/gdelt', d => ({ gdelt: d.events }));
+      fetchEndpoint(fetchGdelt, d => ({ gdelt: d.events }));
       layerFetchedRef.current.add('gdelt');
     }
 
@@ -354,17 +374,17 @@ export default function Dashboard() {
   useEffect(() => {
     const intervals: ReturnType<typeof setInterval>[] = [];
     if (activeLayers.flights || activeLayers.military || activeLayers.jets || activeLayers.private) {
-      intervals.push(setInterval(() => fetchEndpoint('/api/flights'), 300000)); // 5 min (was 2 min)
+      intervals.push(setInterval(() => fetchEndpoint(fetchFlights), 300000));
     }
 
-    if (activeLayers.balloons) {
-      intervals.push(setInterval(() => fetchEndpoint('/api/balloons', d => ({ balloons: d.balloons })), 30000)); // 30s
-    }
-    if (activeLayers.radiation) {
-      intervals.push(setInterval(() => fetchEndpoint('/api/radiation', d => ({ radiation: d.stations })), 60000)); // 1m
-    }
+    // if (activeLayers.balloons) {
+    //   intervals.push(setInterval(() => fetchEndpoint('/api/balloons', d => ({ balloons: d.balloons })), 30000)); // 30s
+    // }
+    // if (activeLayers.radiation) {
+    //   intervals.push(setInterval(() => fetchEndpoint('/api/radiation', d => ({ radiation: d.stations })), 60000)); // 1m
+    // }
     if (activeLayers.maritime) {
-      intervals.push(setInterval(() => fetchEndpoint('/api/maritime', d => ({ maritime_ports: d.ports, maritime_chokepoints: d.chokepoints, maritime_ships: d.ships })), 60000)); // 1m
+      intervals.push(setInterval(() => fetchEndpoint(fetchMaritime, d => ({ maritime_ports: d.ports, maritime_chokepoints: d.chokepoints, maritime_ships: d.ships })), 60000));
     }
     // Fires: no polling needed (data changes very slowly, initial fetch is enough)
     return () => intervals.forEach(clearInterval);
@@ -656,10 +676,6 @@ export default function Dashboard() {
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
             <h1 className="text-base md:text-xl font-bold tracking-[0.4em] md:tracking-[0.5em] text-[var(--text-heading)] font-mono">OSIRIS</h1>
-            <span className="hidden md:inline-flex items-center gap-1 px-1.5 py-[1px] rounded-sm border border-[var(--cyan-primary)]/40 bg-[var(--cyan-primary)]/10 text-[7px] font-mono font-bold tracking-[0.15em] text-[var(--cyan-primary)] uppercase" style={{ lineHeight: '1.4' }}>
-              <Globe className="w-2.5 h-2.5" />
-              OPEN SOURCE
-            </span>
           </div>
           <span className="text-[8px] md:text-[9px] text-[var(--gold-primary)] font-mono tracking-[0.2em] md:tracking-[0.3em] opacity-80">GLOBAL INTELLIGENCE COMMAND</span>
         </div>
@@ -687,10 +703,6 @@ export default function Dashboard() {
         </span>
 
         <UptimeClock />
-        
-        <a href='https://ko-fi.com/M8D41ZYW4Z' target='_blank' className="pointer-events-auto hover:opacity-80 transition-opacity ml-1 flex items-center">
-          <span className="px-3 py-1 rounded-sm border border-[var(--gold-primary)]/40 bg-[var(--gold-primary)]/10 text-[var(--gold-primary)] text-[11px] font-bold tracking-[0.2em]">SUPPORT PROJECT</span>
-        </a>
       </motion.div>
 
       {/* ── MOBILE: Compact top status ── */}
@@ -698,7 +710,6 @@ export default function Dashboard() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.5 }} className="absolute top-3 right-3 z-[200] pointer-events-auto flex items-center gap-2">
           <a href='https://ko-fi.com/M8D41ZYW4Z' target='_blank' className="glass-panel px-2 py-1 flex items-center gap-1.5 text-[7px] font-mono tracking-widest hover:opacity-80 transition-opacity border-[var(--gold-primary)]/40 bg-[var(--gold-primary)]/10">
             <div className="w-1 h-1 rounded-full bg-[var(--gold-primary)] animate-osiris-pulse" />
-            <span className="text-[var(--gold-primary)] font-bold">SUPPORT PROJECT</span>
           </a>
         </motion.div>
       )}

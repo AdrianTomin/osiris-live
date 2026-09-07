@@ -40,3 +40,5 @@ scanner/
 
 # Security - prevent accidental backup commits
 scanner_backend_backup.js
+
+.idea

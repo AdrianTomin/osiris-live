@@ -1,0 +1,61 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "http:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://api.adsb.lol/*" },
+        { "url": "https://feeds.bbci.co.uk/*" },
+        { "url": "https://www.aljazeera.com/*" },
+        { "url": "https://feeds.npr.org/*" },
+        { "url": "https://www.gdacs.org/*" },
+        { "url": "https://www3.nhk.or.jp/*" },
+        { "url": "https://www.dnevnik.bg/*" },
+        { "url": "https://www.actualno.com/*" },
+        { "url": "https://www.mediapool.bg/*" },
+        { "url": "https://www.cisa.gov/*" },
+        { "url": "https://dashboard.shadowserver.org/*" },
+        { "url": "https://query1.finance.yahoo.com/*" },
+        { "url": "https://query2.finance.yahoo.com/*" },
+        { "url": "https://api.coingecko.com/*" },
+        { "url": "https://services.swpc.noaa.gov/*" },
+        { "url": "https://celestrak.org/*" },
+        { "url": "https://earth-search.aws.element84.com/*" },
+        { "url": "https://catalogue.dataspace.copernicus.eu/*" },
+        { "url": "https://deepstatemap.live/*" },
+        { "url": "https://api.bgpview.io/*" },
+        { "url": "https://crt.sh/*" },
+        { "url": "https://cveawg.mitre.org/*" },
+        { "url": "https://cve.circl.lu/*" },
+        { "url": "https://dns.google/*" },
+        { "url": "http://ip-api.com/*" },
+        { "url": "https://internetdb.shodan.io/*" },
+        { "url": "https://otx.alienvault.com/*" },
+        { "url": "https://check.torproject.org/*" },
+        { "url": "https://rdap.org/*" },
+        { "url": "https://odo.asfinag.at/*" },
+        { "url": "https://ipcamlive.com/*" },
+        { "url": "https://data.wsdot.wa.gov/*" },
+        { "url": "https://cwwp2.dot.ca.gov/*" },
+        { "url": "https://511on.ca/*" },
+        { "url": "https://ville.montreal.qc.ca/*" },
+        { "url": "https://511.alberta.ca/*" },
+        { "url": "https://www.travelmidwest.com/*" },
+        { "url": "https://fl511.com/*" },
+        { "url": "https://opendata.ndw.nu/*" },
+        { "url": "https://api.data.gov.sg/*" },
+        { "url": "https://rss.nytimes.com/*" },
+        { "url": "https://restcountries.com/*" },
+        { "url": "https://en.wikipedia.org/*" },
+        { "url": "https://query.wikidata.org/*" },
+        { "url": "https://nominatim.openstreetmap.org/*" }
+      ]
+    }
+  ]
+}
