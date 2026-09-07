@@ -10,6 +10,8 @@ import {
   Maximize2, Minimize2
 } from 'lucide-react';
 
+import { fetchScanner } from '@/lib/api/scanner';
+
 const TABS = [
   { id: 'scanner', label: 'PORT SCAN', icon: Radar, placeholder: 'IP or hostname', color: '#00E5FF' },
   { id: 'vuln', label: 'VULN SCAN', icon: Bug, placeholder: 'IP or hostname', color: '#FF3D3D' },
@@ -92,31 +94,78 @@ function OsintPanelInner({ isMobile, onSweepVisualize }: OsintPanelProps) {
       return;
     }
 
-    try {
-      let url = '';
-      switch (activeTab) {
+      try {
+          // Scanner tools use the new API layer directly.
+          if (
+              activeTab === 'scanner' ||
+              activeTab === 'vuln' ||
+              activeTab === 'headers' ||
+              activeTab === 'ssl' ||
+              activeTab === 'subdomains' ||
+              activeTab === 'tech'
+          ) {
+              const type = activeTab === 'scanner' ? scanType : activeTab;
 
-        case 'dns': url = `/api/osint/dns?domain=${encodeURIComponent(query)}`; break;
-        case 'certs': url = `/api/osint/certs?domain=${encodeURIComponent(query)}`; break;
-        case 'whois': url = `/api/osint/whois?domain=${encodeURIComponent(query)}`; break;
-        case 'threats': url = `/api/osint/threats?query=${encodeURIComponent(query)}`; break;
-        case 'scanner': url = `/api/scanner?target=${encodeURIComponent(query)}&type=${scanType}`; break;
-        case 'vuln': url = `/api/scanner?target=${encodeURIComponent(query)}&type=vuln`; break;
-        case 'headers': url = `/api/scanner?target=${encodeURIComponent(query)}&type=headers`; break;
-        case 'ssl': url = `/api/scanner?target=${encodeURIComponent(query)}&type=ssl`; break;
-        case 'subdomains': url = `/api/scanner?target=${encodeURIComponent(query)}&type=subdomains`; break;
-        case 'tech': url = `/api/scanner?target=${encodeURIComponent(query)}&type=tech`; break;
-      }
-      const res = await fetch(url);
-      const data = await res.json();
-      if (res.ok) {
-        setResults(data);
-        setHistory(prev => [{ tab: activeTab, query, time: new Date().toLocaleTimeString() }, ...prev.slice(0, 9)]);
-      } else {
-        setError(data.error || 'Lookup failed');
-      }
-    } catch { setError('Network error'); }
-    finally { setLoading(false); }
+              const data = await fetchScanner(query, type);
+
+              if (data.error) {
+                  setError(data.error);
+              } else {
+                  setResults(data);
+                  setHistory(prev => [
+                      {
+                          tab: activeTab,
+                          query,
+                          time: new Date().toLocaleTimeString()
+                      },
+                      ...prev.slice(0, 9)
+                  ]);
+              }
+
+              return;
+          }
+
+          let url = '';
+
+          switch (activeTab) {
+              case 'dns':
+                  url = `/api/osint/dns?domain=${encodeURIComponent(query)}`;
+                  break;
+
+              case 'certs':
+                  url = `/api/osint/certs?domain=${encodeURIComponent(query)}`;
+                  break;
+
+              case 'whois':
+                  url = `/api/osint/whois?domain=${encodeURIComponent(query)}`;
+                  break;
+
+              case 'threats':
+                  url = `/api/osint/threats?query=${encodeURIComponent(query)}`;
+                  break;
+          }
+
+          const res = await fetch(url);
+          const data = await res.json();
+
+          if (res.ok) {
+              setResults(data);
+              setHistory(prev => [
+                  {
+                      tab: activeTab,
+                      query,
+                      time: new Date().toLocaleTimeString()
+                  },
+                  ...prev.slice(0, 9)
+              ]);
+          } else {
+              setError(data.error || 'Lookup failed');
+          }
+      } catch (err) {
+          setError(err instanceof Error ? err.message : 'Network error');
+      } finally {
+        setLoading(false);
+    }
   }, [query, activeTab, scanType, loading, sweepCidr]);
 
   const currentTab = TABS.find(t => t.id === activeTab);
